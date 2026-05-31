@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "BhojanGo",
+    "slug": "bhojango",
+    "scheme": "bhojango",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#1E88E5",
+      "resizeMode": "contain"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.bhojango.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FFFFFF"
+      },
+      "package": "com.bhojango.app"
+    },
+    "web": {},
+    "plugins": [
+      "expo-font",
+      "expo-asset",
+      "expo-secure-store"
+    ]
+  }
+}

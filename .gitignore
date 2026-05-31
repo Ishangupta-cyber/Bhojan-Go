@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Local env files
+.env
+**/.env
+
+# Expo local state and build directories
+.expo/
+**/frontend/.expo/
+**/frontend/dist/
+
+# Log files
+*.log
+**/*.log
