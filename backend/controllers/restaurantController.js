@@ -1,78 +1,65 @@
 /**
  * Restaurant Controller
- * Handles all restaurant-related business logic with dummy data.
+ * Handles all restaurant-related business logic with MongoDB.
  */
-
-const dummyRestaurants = [
-  {
-    id: '1',
-    name: 'Domino\'s Pizza',
-    cuisine: 'Pizza, Fast Food',
-    rating: 4.5,
-    delivery_time: '25-30',
-    min_order: 150,
-    price_for_two: 400,
-    is_open: true,
-    is_promoted: true,
-    image_url: 'https://images.unsplash.com/photo-1513104890138-7c749659a591',
-  },
-  {
-    id: '2',
-    name: 'Burger King',
-    cuisine: 'Burger, Fast Food',
-    rating: 4.2,
-    delivery_time: '30-40',
-    min_order: 100,
-    price_for_two: 300,
-    is_open: true,
-    is_promoted: false,
-    image_url: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd',
-  },
-  {
-    id: '3',
-    name: 'Behrouz Biryani',
-    cuisine: 'Biryani, North Indian',
-    rating: 4.8,
-    delivery_time: '40-50',
-    min_order: 250,
-    price_for_two: 600,
-    is_open: true,
-    is_promoted: true,
-    image_url: 'https://images.unsplash.com/photo-1589302168068-964664d93dc0',
-  }
-];
-
-const dummyMenuItems = [
-  { id: '1', restaurant_id: '1', name: 'Margherita Pizza', price: 200, is_veg: true, is_bestseller: true, description: 'Classic cheese pizza' },
-  { id: '2', restaurant_id: '1', name: 'Pepperoni Pizza', price: 350, is_veg: false, is_bestseller: true, description: 'Pepperoni with extra cheese' },
-  { id: '3', restaurant_id: '2', name: 'Whopper', price: 150, is_veg: false, is_bestseller: true, description: 'Signature burger' },
-  { id: '4', restaurant_id: '2', name: 'Veggie Burger', price: 120, is_veg: true, is_bestseller: false, description: 'Crispy veg patty' },
-  { id: '5', restaurant_id: '3', name: 'Chicken Biryani', price: 400, is_veg: false, is_bestseller: true, description: 'Aromatic basmati rice' },
-];
+const Restaurant = require('../models/Restaurant');
+const MenuItem = require('../models/MenuItem');
+const { AppError } = require('../middleware/errorHandler');
 
 /**
  * GET /api/restaurants
- * Fetch all restaurants with optional search/filter
+ * Fetch all restaurants with optional search, filter, and pagination
  */
 const getAllRestaurants = async (req, res, next) => {
   try {
-    const { search, cuisine, promoted } = req.query;
-    let data = [...dummyRestaurants];
+    const { search, cuisine, promoted, city, veg_only, is_open, page = 1, limit = 20 } = req.query;
+
+    // Build filter object
+    const filter = {};
 
     if (search) {
-      data = data.filter(r => r.name.toLowerCase().includes(search.toLowerCase()) || r.cuisine.toLowerCase().includes(search.toLowerCase()));
+      filter.$text = { $search: search };
     }
+
     if (cuisine) {
-      data = data.filter(r => r.cuisine.toLowerCase().includes(cuisine.toLowerCase()));
+      filter.cuisine = { $regex: cuisine, $options: 'i' };
     }
+
     if (promoted === 'true') {
-      data = data.filter(r => r.is_promoted);
+      filter.is_promoted = true;
     }
+
+    if (city) {
+      filter.city = { $regex: city, $options: 'i' };
+    }
+
+    if (veg_only === 'true') {
+      filter.is_veg_only = true;
+    }
+
+    if (is_open === 'true') {
+      filter.is_open = true;
+    }
+
+    // Pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const [restaurants, total] = await Promise.all([
+      Restaurant.find(filter)
+        .sort({ is_promoted: -1, rating: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean(),
+      Restaurant.countDocuments(filter),
+    ]);
 
     res.json({
       success: true,
-      count: data.length,
-      data,
+      count: restaurants.length,
+      total,
+      page: parseInt(page),
+      totalPages: Math.ceil(total / parseInt(limit)),
+      data: restaurants,
     });
   } catch (error) {
     next(error);
@@ -86,22 +73,32 @@ const getAllRestaurants = async (req, res, next) => {
 const getRestaurantById = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const restaurant = dummyRestaurants.find(r => r.id === id);
+
+    const restaurant = await Restaurant.findById(id).lean();
 
     if (!restaurant) {
-      return res.status(404).json({
-        success: false,
-        message: 'Restaurant not found',
-      });
+      throw new AppError('Restaurant not found', 404);
     }
 
-    const menu = dummyMenuItems.filter(m => m.restaurant_id === id);
+    // Fetch menu items for this restaurant
+    const menu = await MenuItem.find({ restaurant_id: id, is_available: true })
+      .sort({ is_bestseller: -1, category: 1, name: 1 })
+      .lean();
+
+    // Group menu by category
+    const menuByCategory = {};
+    menu.forEach((item) => {
+      const cat = item.category || 'Other';
+      if (!menuByCategory[cat]) menuByCategory[cat] = [];
+      menuByCategory[cat].push(item);
+    });
 
     res.json({
       success: true,
       data: {
         ...restaurant,
         menu,
+        menuByCategory,
       },
     });
   } catch (error) {
@@ -109,4 +106,37 @@ const getRestaurantById = async (req, res, next) => {
   }
 };
 
-module.exports = { getAllRestaurants, getRestaurantById };
+/**
+ * GET /api/restaurants/:id/menu
+ * Fetch only the menu items for a restaurant
+ */
+const getRestaurantMenu = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { category, veg } = req.query;
+
+    const filter = { restaurant_id: id, is_available: true };
+
+    if (category) {
+      filter.category = { $regex: category, $options: 'i' };
+    }
+
+    if (veg === 'true') {
+      filter.is_veg = true;
+    }
+
+    const menu = await MenuItem.find(filter)
+      .sort({ is_bestseller: -1, category: 1, name: 1 })
+      .lean();
+
+    res.json({
+      success: true,
+      count: menu.length,
+      data: menu,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { getAllRestaurants, getRestaurantById, getRestaurantMenu };

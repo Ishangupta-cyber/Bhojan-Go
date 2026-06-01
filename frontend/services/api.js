@@ -1,10 +1,10 @@
 /**
  * API Service
- * Axios instance configured with base URL and Supabase auth token interceptor.
+ * Axios instance configured with base URL and Clerk auth token interceptor.
  * All backend API calls go through this service.
  */
 import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from '@clerk/clerk-expo';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000/api';
 
@@ -17,15 +17,26 @@ const api = axios.create({
   },
 });
 
-// Request interceptor — attach local auth token if exists
+// We'll set the auth token dynamically using a request interceptor
+// The token will be injected at call time by the API functions below
+let _getSessionToken = null;
+
+/**
+ * Initialize the API service with Clerk's getToken function
+ * Call this once in the App component or a top-level provider
+ */
+export const initApiAuth = (getToken) => {
+  _getSessionToken = getToken;
+};
+
+// Request interceptor — attach Clerk session token
 api.interceptors.request.use(
   async (config) => {
     try {
-      const sessionStr = await AsyncStorage.getItem('@bhojango_session');
-      if (sessionStr) {
-        const session = JSON.parse(sessionStr);
-        if (session.id) {
-          config.headers.Authorization = `Bearer ${session.id}`;
+      if (_getSessionToken) {
+        const token = await _getSessionToken();
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
         }
       }
     } catch (error) {
@@ -63,5 +74,8 @@ export const createOrder = (orderData) =>
 
 export const getOrders = (userId) =>
   api.get(`/orders/${userId}`);
+
+export const getOrderById = (orderId) =>
+  api.get(`/orders/detail/${orderId}`);
 
 export default api;

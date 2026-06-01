@@ -1,15 +1,9 @@
 /**
  * Category Controller
- * Handles food category retrieval with dummy data.
+ * Handles food category retrieval with MongoDB.
  */
-
-const dummyCategories = [
-  { id: '1', name: 'Pizza', icon: '🍕' },
-  { id: '2', name: 'Burger', icon: '🍔' },
-  { id: '3', name: 'Biryani', icon: '🍚' },
-  { id: '4', name: 'Healthy', icon: '🥗' },
-  { id: '5', name: 'Desserts', icon: '🍰' },
-];
+const Category = require('../models/Category');
+const { AppError } = require('../middleware/errorHandler');
 
 /**
  * GET /api/categories
@@ -17,14 +11,41 @@ const dummyCategories = [
  */
 const getAllCategories = async (req, res, next) => {
   try {
+    const categories = await Category.find()
+      .sort({ order: 1, name: 1 })
+      .lean();
+
     res.json({
       success: true,
-      count: dummyCategories.length,
-      data: dummyCategories,
+      count: categories.length,
+      data: categories,
     });
   } catch (error) {
     next(error);
   }
 };
 
-module.exports = { getAllCategories };
+/**
+ * GET /api/categories/:id
+ * Fetch a single category by ID
+ */
+const getCategoryById = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const category = await Category.findById(id).lean();
+
+    if (!category) {
+      throw new AppError('Category not found', 404);
+    }
+
+    res.json({
+      success: true,
+      data: category,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { getAllCategories, getCategoryById };

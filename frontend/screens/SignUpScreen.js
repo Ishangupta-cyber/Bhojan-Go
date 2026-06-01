@@ -1,6 +1,6 @@
 /**
  * Sign Up Screen
- * New user registration via Supabase (email/password).
+ * New user registration via Clerk.
  */
 import React, { useState, useCallback } from 'react';
 import {
@@ -15,56 +15,146 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { useAuth } from '../context/AuthContext';
+import { useSignUp } from '@clerk/clerk-expo';
 import Colors from '../constants/colors';
 
 const SignUpScreen = ({ navigation }) => {
-  const { signUp } = useAuth();
+  const { signUp, setActive, isLoaded } = useSignUp();
 
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [emailAddress, setEmailAddress] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [pendingVerification, setPendingVerification] = useState(false);
+  const [code, setCode] = useState('');
 
-  // Handle sign up via Supabase
+  // Handle sign up via Clerk
   const handleSignUp = useCallback(async () => {
-    if (!fullName.trim() || !email.trim() || !password || !confirmPassword) {
-      Alert.alert('Missing Fields', 'Please fill in all fields.');
+    if (!firstName.trim() || !emailAddress.trim() || !password) {
+      Alert.alert('Missing Fields', 'Please fill in all required fields.');
       return;
     }
 
-    if (password !== confirmPassword) {
-      Alert.alert('Password Mismatch', 'Passwords do not match.');
+    if (password.length < 8) {
+      Alert.alert('Weak Password', 'Password must be at least 8 characters.');
       return;
     }
 
-    if (password.length < 6) {
-      Alert.alert('Weak Password', 'Password must be at least 6 characters.');
-      return;
-    }
+    if (!isLoaded) return;
 
     setLoading(true);
     try {
-      const data = await signUp(email.trim(), password, fullName.trim());
-      
-      // Check if email confirmation is required
-      if (data?.user && !data?.session) {
+      const signUpAttempt = await signUp.create({
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        emailAddress: emailAddress.trim(),
+        password,
+      });
+
+      // Check if email verification is required
+      if (signUpAttempt.verifications?.emailAddress?.status === 'unverified') {
+        // Send verification email
+        await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
+        setPendingVerification(true);
         Alert.alert(
-          'Check Your Email',
-          'We sent you a confirmation link. Please verify your email and then sign in.',
-          [{ text: 'OK', onPress: () => navigation.navigate('Login') }]
+          'Verify Your Email',
+          'We sent a verification code to your email. Please enter it below.'
         );
+      } else {
+        // Auto-verified or no verification needed
+        await setActive({ session: signUpAttempt.createdSessionId });
       }
-      // If session exists, AuthContext will automatically update and navigate
     } catch (err) {
-      const message = err.message || 'Sign up failed';
+      const message = err.errors?.[0]?.message || err.message || 'Sign up failed';
       Alert.alert('Sign Up Failed', message);
     } finally {
       setLoading(false);
     }
-  }, [fullName, email, password, confirmPassword, signUp, navigation]);
+  }, [firstName, lastName, emailAddress, password, signUp, setActive, isLoaded]);
+
+  // Handle email verification
+  const handleVerification = useCallback(async () => {
+    if (!code.trim()) {
+      Alert.alert('Missing Code', 'Please enter the verification code.');
+      return;
+    }
+
+    if (!isLoaded) return;
+
+    setLoading(true);
+    try {
+      const signUpAttempt = await signUp.attemptEmailAddressVerification({
+        code: code.trim(),
+      });
+
+      if (signUpAttempt.status === 'complete') {
+        await setActive({ session: signUpAttempt.createdSessionId });
+      } else {
+        Alert.alert('Verification Failed', 'Invalid code. Please try again.');
+      }
+    } catch (err) {
+      const message = err.errors?.[0]?.message || 'Verification failed';
+      Alert.alert('Verification Failed', message);
+    } finally {
+      setLoading(false);
+    }
+  }, [code, signUp, setActive, isLoaded]);
+
+  // Verification screen
+  if (pendingVerification) {
+    return (
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.header}>
+            <View style={styles.logoIcon}>
+              <Text style={styles.logoEmoji}>📧</Text>
+            </View>
+            <Text style={styles.title}>Verify Email</Text>
+            <Text style={styles.subtitle}>
+              Enter the code sent to {emailAddress}
+            </Text>
+          </View>
+
+          <View style={styles.form}>
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Verification Code</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter 6-digit code"
+                placeholderTextColor={Colors.textLight}
+                value={code}
+                onChangeText={setCode}
+                keyboardType="number-pad"
+                maxLength={6}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={[styles.signUpButton, loading && styles.buttonDisabled]}
+              onPress={handleVerification}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              {loading ? (
+                <ActivityIndicator color={Colors.textWhite} />
+              ) : (
+                <Text style={styles.signUpButtonText}>Verify & Continue</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -89,17 +179,30 @@ const SignUpScreen = ({ navigation }) => {
 
         {/* Form */}
         <View style={styles.form}>
-          {/* Full Name */}
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Full Name</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="John Doe"
-              placeholderTextColor={Colors.textLight}
-              value={fullName}
-              onChangeText={setFullName}
-              autoCapitalize="words"
-            />
+          {/* Name Row */}
+          <View style={styles.nameRow}>
+            <View style={[styles.inputContainer, styles.nameInput]}>
+              <Text style={styles.inputLabel}>First Name</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Ishan"
+                placeholderTextColor={Colors.textLight}
+                value={firstName}
+                onChangeText={setFirstName}
+                autoCapitalize="words"
+              />
+            </View>
+            <View style={[styles.inputContainer, styles.nameInput]}>
+              <Text style={styles.inputLabel}>Last Name</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Gupta"
+                placeholderTextColor={Colors.textLight}
+                value={lastName}
+                onChangeText={setLastName}
+                autoCapitalize="words"
+              />
+            </View>
           </View>
 
           {/* Email */}
@@ -109,8 +212,8 @@ const SignUpScreen = ({ navigation }) => {
               style={styles.input}
               placeholder="you@example.com"
               placeholderTextColor={Colors.textLight}
-              value={email}
-              onChangeText={setEmail}
+              value={emailAddress}
+              onChangeText={setEmailAddress}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
@@ -123,7 +226,7 @@ const SignUpScreen = ({ navigation }) => {
             <View style={styles.passwordContainer}>
               <TextInput
                 style={styles.passwordInput}
-                placeholder="At least 6 characters"
+                placeholder="At least 8 characters"
                 placeholderTextColor={Colors.textLight}
                 value={password}
                 onChangeText={setPassword}
@@ -138,19 +241,6 @@ const SignUpScreen = ({ navigation }) => {
                 </Text>
               </TouchableOpacity>
             </View>
-          </View>
-
-          {/* Confirm Password */}
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Confirm Password</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Re-enter your password"
-              placeholderTextColor={Colors.textLight}
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry={!showPassword}
-            />
           </View>
 
           {/* Sign Up Button */}
@@ -225,6 +315,13 @@ const styles = StyleSheet.create({
   },
   form: {
     marginBottom: 24,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  nameInput: {
+    flex: 1,
   },
   inputContainer: {
     marginBottom: 16,

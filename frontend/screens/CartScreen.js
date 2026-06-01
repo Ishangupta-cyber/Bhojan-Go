@@ -13,7 +13,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useCart } from '../context/CartContext';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '@clerk/clerk-expo';
 import { createOrder } from '../services/api';
 import CartItem from '../components/CartItem';
 import Colors from '../constants/colors';
@@ -23,9 +23,8 @@ const TAX_RATE = 0.05;
 
 const CartScreen = ({ navigation }) => {
   const { items, cartTotal, itemCount, updateQuantity, removeFromCart, clearCart, restaurantId, restaurantName } = useCart();
-  const { user } = useAuth();
+  const { userId } = useAuth();
   const [loading, setLoading] = useState(false);
-  const userId = user?.id || 'demo-user';
 
   const taxAmount = cartTotal * TAX_RATE;
   const totalWithExtras = cartTotal + (items.length > 0 ? DELIVERY_FEE : 0) + taxAmount;

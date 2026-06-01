@@ -1,6 +1,6 @@
 /**
  * Login Screen
- * Supabase email/password authentication.
+ * Clerk-powered authentication with email/password and social sign-in.
  */
 import React, { useState, useCallback } from 'react';
 import {
@@ -15,34 +15,59 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { useAuth } from '../context/AuthContext';
+import { useSignIn } from '@clerk/clerk-expo';
 import Colors from '../constants/colors';
 
 const LoginScreen = ({ navigation }) => {
-  const { signIn } = useAuth();
+  const { signIn, setActive, isLoaded } = useSignIn();
 
-  const [email, setEmail] = useState('');
+  const [emailAddress, setEmailAddress] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  // Handle email/password login via Supabase
+  // Handle email/password login via Clerk
   const handleLogin = useCallback(async () => {
-    if (!email.trim() || !password.trim()) {
+    if (!emailAddress.trim() || !password.trim()) {
       Alert.alert('Missing Fields', 'Please enter both email and password.');
       return;
     }
 
+    if (!isLoaded) return;
+
     setLoading(true);
     try {
-      await signIn(email.trim(), password);
+      const signInAttempt = await signIn.create({
+        identifier: emailAddress.trim(),
+        password,
+      });
+
+      // Set the active session
+      await setActive({ session: signInAttempt.createdSessionId });
     } catch (err) {
-      const message = err.message || 'Login failed';
+      const message = err.errors?.[0]?.message || err.message || 'Login failed';
       Alert.alert('Login Failed', message);
     } finally {
       setLoading(false);
     }
-  }, [email, password, signIn]);
+  }, [emailAddress, password, signIn, setActive, isLoaded]);
+
+  // Handle Google OAuth sign-in
+  const handleGoogleSignIn = useCallback(async () => {
+    if (!isLoaded) return;
+
+    try {
+      const signInAttempt = await signIn.create({
+        strategy: 'oauth_google',
+      });
+
+      // Note: For Expo, you need to set up OAuth with WebBrowser
+      // This is a placeholder - full OAuth requires expo-auth-session setup
+      Alert.alert('Coming Soon', 'Google Sign In will be available in the next update!');
+    } catch (err) {
+      Alert.alert('Sign In Error', err.errors?.[0]?.message || 'Something went wrong');
+    }
+  }, [signIn, isLoaded]);
 
   return (
     <KeyboardAvoidingView
@@ -74,8 +99,8 @@ const LoginScreen = ({ navigation }) => {
               style={styles.input}
               placeholder="you@example.com"
               placeholderTextColor={Colors.textLight}
-              value={email}
-              onChangeText={setEmail}
+              value={emailAddress}
+              onChangeText={setEmailAddress}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
@@ -117,6 +142,23 @@ const LoginScreen = ({ navigation }) => {
             ) : (
               <Text style={styles.loginButtonText}>Sign In</Text>
             )}
+          </TouchableOpacity>
+
+          {/* Divider */}
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          {/* Google Sign In */}
+          <TouchableOpacity
+            style={styles.googleButton}
+            onPress={handleGoogleSignIn}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.googleIcon}>🔗</Text>
+            <Text style={styles.googleButtonText}>Continue with Google</Text>
           </TouchableOpacity>
         </View>
 
@@ -237,6 +279,40 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
     color: Colors.textWhite,
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 24,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.border,
+  },
+  dividerText: {
+    fontSize: 14,
+    color: Colors.textLight,
+    marginHorizontal: 16,
+  },
+  googleButton: {
+    height: 54,
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    gap: 10,
+  },
+  googleIcon: {
+    fontSize: 20,
+  },
+  googleButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.textPrimary,
   },
   footer: {
     flexDirection: 'row',

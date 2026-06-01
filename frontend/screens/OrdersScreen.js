@@ -11,7 +11,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { getOrders } from '../services/api';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '@clerk/clerk-expo';
 import LoadingSkeleton from '../components/LoadingSkeleton';
 import ErrorView from '../components/ErrorView';
 import Colors from '../constants/colors';
@@ -26,8 +26,7 @@ const STATUS_CONFIG = {
 };
 
 const OrdersScreen = () => {
-  const { user } = useAuth();
-  const userId = user?.id || 'demo-user';
+  const { userId } = useAuth();
 
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);

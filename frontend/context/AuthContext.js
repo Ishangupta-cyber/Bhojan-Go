@@ -1,118 +1,51 @@
 /**
  * Auth Context
- * Simple local authentication using AsyncStorage.
- * Stores user credentials locally so the app works without external auth services.
+ * Wraps Clerk authentication for use throughout the app.
+ * Provides: isSignedIn, isLoaded, user, signOut, userId
  */
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { createContext, useContext } from 'react';
+import { useAuth, useUser, useClerk } from '@clerk/clerk-expo';
 
 const AuthContext = createContext(null);
 
-const USERS_STORAGE_KEY = '@bhojango_users';
-const SESSION_STORAGE_KEY = '@bhojango_session';
-
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { isSignedIn, isLoaded, userId } = useAuth();
+  const { user } = useUser();
+  const { signOut } = useClerk();
 
-  // Check for existing session on app start
-  useEffect(() => {
-    checkSession();
-  }, []);
-
-  const checkSession = async () => {
-    try {
-      const sessionStr = await AsyncStorage.getItem(SESSION_STORAGE_KEY);
-      if (sessionStr) {
-        const sessionUser = JSON.parse(sessionStr);
-        setUser(sessionUser);
+  // Map Clerk user to our app's user format
+  const appUser = user
+    ? {
+        id: userId,
+        email: user.primaryEmailAddress?.emailAddress || '',
+        full_name: user.fullName || user.username || 'User',
+        first_name: user.firstName || '',
+        last_name: user.lastName || '',
+        image_url: user.imageUrl || null,
+        created_at: user.createdAt?.toString() || '',
+        phone: user.primaryPhoneNumber?.phoneNumber || '',
       }
-    } catch (e) {
-      console.warn('Failed to restore session:', e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Get all registered users
-  const getUsers = async () => {
-    try {
-      const usersStr = await AsyncStorage.getItem(USERS_STORAGE_KEY);
-      return usersStr ? JSON.parse(usersStr) : [];
-    } catch {
-      return [];
-    }
-  };
-
-  // Sign up — store new user locally
-  const signUp = async (email, password, fullName) => {
-    const users = await getUsers();
-    const existing = users.find((u) => u.email === email.toLowerCase());
-    if (existing) {
-      throw new Error('An account with this email already exists. Please sign in.');
-    }
-
-    const newUser = {
-      id: Date.now().toString(),
-      email: email.toLowerCase(),
-      password,
-      full_name: fullName,
-      created_at: new Date().toISOString(),
-    };
-
-    users.push(newUser);
-    await AsyncStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
-
-    // Auto sign in after signup
-    const sessionUser = { ...newUser };
-    delete sessionUser.password;
-    setUser(sessionUser);
-    await AsyncStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionUser));
-
-    return { user: sessionUser };
-  };
-
-  // Sign in — verify credentials locally
-  const signIn = async (email, password) => {
-    const users = await getUsers();
-    const found = users.find(
-      (u) => u.email === email.toLowerCase() && u.password === password
-    );
-
-    if (!found) {
-      throw new Error('Invalid email or password.');
-    }
-
-    const sessionUser = { ...found };
-    delete sessionUser.password;
-    setUser(sessionUser);
-    await AsyncStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionUser));
-
-    return { user: sessionUser };
-  };
-
-  // Sign out
-  const signOut = async () => {
-    setUser(null);
-    await AsyncStorage.removeItem(SESSION_STORAGE_KEY);
-  };
+    : null;
 
   const value = {
-    user,
-    loading,
-    signUp,
-    signIn,
+    user: appUser,
+    isSignedIn: !!isSignedIn,
+    isLoaded,
+    loading: !isLoaded,
+    userId,
     signOut,
-    isSignedIn: !!user,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
-export const useAuth = () => {
+export const useAppAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error('useAppAuth must be used within an AuthProvider');
   }
   return context;
 };
+
+// Keep backward compatibility
+export const useAuthContext = useAppAuth;
