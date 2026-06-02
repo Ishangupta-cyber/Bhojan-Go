@@ -1,6 +1,11 @@
 /**
  * Sign Up Screen
  * New user registration via Clerk.
+ *
+ * Flow:
+ * 1. User fills form → Clerk creates account
+ * 2. If email verification needed → show code input screen
+ * 3. After verification → setActive session → auto-redirects to main app
  */
 import React, { useState, useCallback } from 'react';
 import {
@@ -54,7 +59,7 @@ const SignUpScreen = ({ navigation }) => {
       });
 
       // Check if email verification is required
-      if (signUpAttempt.verifications?.emailAddress?.status === 'unverified') {
+      if (signUpAttempt.verifications?.emailAddress?.status !== 'verified') {
         // Send verification email
         await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
         setPendingVerification(true);
@@ -63,8 +68,10 @@ const SignUpScreen = ({ navigation }) => {
           'We sent a verification code to your email. Please enter it below.'
         );
       } else {
-        // Auto-verified or no verification needed
-        await setActive({ session: signUpAttempt.createdSessionId });
+        // Already verified — set session directly
+        if (signUpAttempt.createdSessionId) {
+          await setActive({ session: signUpAttempt.createdSessionId });
+        }
       }
     } catch (err) {
       const message = err.errors?.[0]?.message || err.message || 'Sign up failed';
@@ -89,10 +96,14 @@ const SignUpScreen = ({ navigation }) => {
         code: code.trim(),
       });
 
+      // After successful verification, set the active session
+      // This will update isSignedIn → true → AppNavigator auto-redirects
       if (signUpAttempt.status === 'complete') {
-        await setActive({ session: signUpAttempt.createdSessionId });
+        if (signUpAttempt.createdSessionId) {
+          await setActive({ session: signUpAttempt.createdSessionId });
+        }
       } else {
-        Alert.alert('Verification Failed', 'Invalid code. Please try again.');
+        Alert.alert('Verification Incomplete', 'Something went wrong. Please try again.');
       }
     } catch (err) {
       const message = err.errors?.[0]?.message || 'Verification failed';
@@ -101,6 +112,17 @@ const SignUpScreen = ({ navigation }) => {
       setLoading(false);
     }
   }, [code, signUp, setActive, isLoaded]);
+
+  // Resend verification code
+  const handleResendCode = useCallback(async () => {
+    if (!isLoaded) return;
+    try {
+      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
+      Alert.alert('Code Resent', 'A new verification code has been sent to your email.');
+    } catch (err) {
+      Alert.alert('Error', err.errors?.[0]?.message || 'Could not resend code.');
+    }
+  }, [signUp, isLoaded]);
 
   // Verification screen
   if (pendingVerification) {
@@ -149,6 +171,15 @@ const SignUpScreen = ({ navigation }) => {
               ) : (
                 <Text style={styles.signUpButtonText}>Verify & Continue</Text>
               )}
+            </TouchableOpacity>
+
+            {/* Resend Code */}
+            <TouchableOpacity
+              style={styles.resendButton}
+              onPress={handleResendCode}
+              disabled={loading}
+            >
+              <Text style={styles.resendText}>Didn't get the code? Resend</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -383,6 +414,15 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
     color: Colors.textWhite,
+  },
+  resendButton: {
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  resendText: {
+    fontSize: 14,
+    color: Colors.primary,
+    fontWeight: '600',
   },
   footer: {
     flexDirection: 'row',

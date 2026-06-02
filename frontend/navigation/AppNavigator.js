@@ -2,6 +2,10 @@
  * App Navigator
  * Root stack navigator — routes between Auth flow and Main app.
  * Uses Clerk auth state for navigation.
+ *
+ * KEY FIX: Adding `key={isSignedIn ? 'main' : 'auth'}` forces the
+ * Stack.Navigator to fully re-mount when auth state changes,
+ * preventing the "stuck on auth screen" bug.
  */
 import React, { useEffect } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -26,20 +30,28 @@ const AppNavigator = () => {
     }
   }, [getToken]);
 
+  // Show splash while Clerk is loading
+  if (!isLoaded) {
+    return (
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="Splash" component={SplashScreen} />
+      </Stack.Navigator>
+    );
+  }
+
   return (
     <AuthProvider>
       <Stack.Navigator
+        // CRITICAL: key prop forces full remount when auth state changes
+        // Without this, React Navigation keeps the old screen tree
+        key={isSignedIn ? 'main' : 'auth'}
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: Colors.background },
           animation: 'fade',
         }}
       >
-        {!isLoaded ? (
-          <Stack.Screen name="Splash" component={SplashScreen} />
-        ) : !isSignedIn ? (
-          <Stack.Screen name="Auth" component={AuthNavigator} />
-        ) : (
+        {isSignedIn ? (
           <>
             <Stack.Screen name="MainTabs" component={TabNavigator} />
             <Stack.Screen
@@ -54,6 +66,8 @@ const AppNavigator = () => {
               }}
             />
           </>
+        ) : (
+          <Stack.Screen name="Auth" component={AuthNavigator} />
         )}
       </Stack.Navigator>
     </AuthProvider>
