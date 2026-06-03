@@ -1,6 +1,6 @@
 /**
  * Profile Screen
- * Shows user info from Clerk and logout button.
+ * Shows user info from Firebase Auth and logout button.
  */
 import React from 'react';
 import {
@@ -12,14 +12,13 @@ import {
   Alert,
   ScrollView,
 } from 'react-native';
-import { useUser, useClerk } from '@clerk/clerk-expo';
+import { useAppAuth } from '../context/AuthContext';
 import Colors from '../constants/colors';
 
 const ProfileScreen = () => {
-  const { user } = useUser();
-  const { signOut } = useClerk();
+  const { user, signOut } = useAppAuth();
 
-  // Handle logout via Clerk
+  // Handle logout via Firebase
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
@@ -37,9 +36,9 @@ const ProfileScreen = () => {
     ]);
   };
 
-  const userName = user?.fullName || user?.username || 'User';
-  const userEmail = user?.primaryEmailAddress?.emailAddress || 'user@bhojango.com';
-  const userImage = user?.imageUrl || null;
+  const userName = user?.full_name || 'User';
+  const userEmail = user?.email || 'user@bhojango.com';
+  const userImage = user?.image_url || null;
   const initials = userName.charAt(0).toUpperCase();
   const memberSince = user?.createdAt
     ? new Date(user.createdAt).toLocaleDateString('en-IN', {
@@ -105,7 +104,7 @@ const ProfileScreen = () => {
         {/* App Info */}
         <View style={styles.appInfo}>
           <Text style={styles.appName}>BhojanGo</Text>
-          <Text style={styles.appVersion}>Version 2.0.0 • MongoDB + Clerk</Text>
+          <Text style={styles.appVersion}>Version 2.0.0 • MongoDB + Firebase</Text>
         </View>
 
         {/* Logout Button */}

@@ -2,15 +2,13 @@
  * BhojanGo Backend Server
  * Express API server for the BhojanGo food delivery application.
  * Connects to MongoDB Atlas for data persistence.
- * Uses Clerk for authentication.
+ * Uses Firebase Authentication for user verification.
  */
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const cookieParser = require('cookie-parser');
-const { clerkMiddleware } = require('@clerk/express');
 
 // Import database connection
 const connectDB = require('./config/database');
@@ -37,12 +35,8 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use(morgan('dev'));                          // Request logging
-app.use(cookieParser());                         // Parse cookies (Clerk needs this)
 app.use(express.json({ limit: '10mb' }));       // Parse JSON bodies
 app.use(express.urlencoded({ extended: true }));
-
-// Clerk middleware — makes req.auth available on all routes
-app.use(clerkMiddleware());
 
 // ─── Health Check ─────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
@@ -51,7 +45,7 @@ app.get('/api/health', (req, res) => {
     service: 'BhojanGo API',
     version: '2.0.0',
     database: 'MongoDB Atlas',
-    auth: 'Clerk',
+    auth: 'Firebase',
     timestamp: new Date().toISOString(),
   });
 });
@@ -76,7 +70,7 @@ app.use(errorHandler);
 app.listen(PORT, () => {
   console.log(`🚀 BhojanGo API v2.0 running on http://localhost:${PORT}`);
   console.log(`📋 Health check: http://localhost:${PORT}/api/health`);
-  console.log(`🔐 Auth: Clerk | 🗄️ DB: MongoDB Atlas`);
+  console.log(`🔐 Auth: Firebase | 🗄️ DB: MongoDB Atlas`);
 });
 
 module.exports = app;

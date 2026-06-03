@@ -1,6 +1,6 @@
 /**
  * Orders Screen
- * Displays order history using Supabase auth.
+ * Displays order history using Firebase Auth userId.
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import {
@@ -11,7 +11,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { getOrders } from '../services/api';
-import { useAuth } from '@clerk/clerk-expo';
+import { useAppAuth } from '../context/AuthContext';
 import LoadingSkeleton from '../components/LoadingSkeleton';
 import ErrorView from '../components/ErrorView';
 import Colors from '../constants/colors';
@@ -26,7 +26,7 @@ const STATUS_CONFIG = {
 };
 
 const OrdersScreen = () => {
-  const { userId } = useAuth();
+  const { userId } = useAppAuth();
 
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -34,6 +34,10 @@ const OrdersScreen = () => {
   const [error, setError] = useState(null);
 
   const fetchOrders = useCallback(async () => {
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
     try {
       setError(null);
       const response = await getOrders(userId);

@@ -1,10 +1,9 @@
 /**
  * API Service
- * Axios instance configured with base URL and Clerk auth token interceptor.
+ * Axios instance configured with base URL and Firebase ID token interceptor.
  * All backend API calls go through this service.
  */
 import axios from 'axios';
-import { useAuth } from '@clerk/clerk-expo';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000/api';
 
@@ -17,24 +16,23 @@ const api = axios.create({
   },
 });
 
-// We'll set the auth token dynamically using a request interceptor
-// The token will be injected at call time by the API functions below
-let _getSessionToken = null;
+// Firebase getIdToken function — set by initApiAuth
+let _getIdToken = null;
 
 /**
- * Initialize the API service with Clerk's getToken function
- * Call this once in the App component or a top-level provider
+ * Initialize the API service with Firebase's getIdToken function
+ * Call this once in the AppNavigator component
  */
-export const initApiAuth = (getToken) => {
-  _getSessionToken = getToken;
+export const initApiAuth = (getIdToken) => {
+  _getIdToken = getIdToken;
 };
 
-// Request interceptor — attach Clerk session token
+// Request interceptor — attach Firebase ID token
 api.interceptors.request.use(
   async (config) => {
     try {
-      if (_getSessionToken) {
-        const token = await _getSessionToken();
+      if (_getIdToken) {
+        const token = await _getIdToken();
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }

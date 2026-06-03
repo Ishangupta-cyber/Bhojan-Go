@@ -1,39 +1,71 @@
 /**
  * Auth Context
- * Wraps Clerk authentication for use throughout the app.
- * Provides: isSignedIn, isLoaded, user, signOut, userId
+ * Wraps Firebase Authentication for use throughout the app.
+ * Provides: user, isSignedIn, isLoaded, userId, signOut, getIdToken
  */
-import React, { createContext, useContext } from 'react';
-import { useAuth, useUser, useClerk } from '@clerk/clerk-expo';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
+import { auth } from '../config/firebase';
 
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  const { isSignedIn, isLoaded, userId } = useAuth();
-  const { user } = useUser();
-  const { signOut } = useClerk();
+  const [user, setUser] = useState(null);
+  const [isLoaded, setIsLoaded] = useState(false);
 
-  // Map Clerk user to our app's user format
-  const appUser = user
-    ? {
-        id: userId,
-        email: user.primaryEmailAddress?.emailAddress || '',
-        full_name: user.fullName || user.username || 'User',
-        first_name: user.firstName || '',
-        last_name: user.lastName || '',
-        image_url: user.imageUrl || null,
-        created_at: user.createdAt?.toString() || '',
-        phone: user.primaryPhoneNumber?.phoneNumber || '',
+  useEffect(() => {
+    // Listen for Firebase auth state changes
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser) {
+        // Map Firebase user to our app's user format
+        const appUser = {
+          id: firebaseUser.uid,
+          email: firebaseUser.email || '',
+          full_name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+          first_name: firebaseUser.displayName?.split(' ')[0] || '',
+          last_name: firebaseUser.displayName?.split(' ').slice(1).join(' ') || '',
+          image_url: firebaseUser.photoURL || null,
+          phone: firebaseUser.phoneNumber || '',
+          emailVerified: firebaseUser.emailVerified,
+          createdAt: firebaseUser.metadata?.creationTime || '',
+        };
+        setUser(appUser);
+      } else {
+        setUser(null);
       }
-    : null;
+      setIsLoaded(true);
+    });
+
+    // Cleanup subscription
+    return () => unsubscribe();
+  }, []);
+
+  // Sign out function
+  const signOut = async () => {
+    try {
+      await firebaseSignOut(auth);
+    } catch (error) {
+      console.error('Sign out error:', error.message);
+      throw error;
+    }
+  };
+
+  // Get Firebase ID token for API calls
+  const getIdToken = async () => {
+    if (auth.currentUser) {
+      return await auth.currentUser.getIdToken();
+    }
+    return null;
+  };
 
   const value = {
-    user: appUser,
-    isSignedIn: !!isSignedIn,
+    user,
+    isSignedIn: !!user,
     isLoaded,
     loading: !isLoaded,
-    userId,
+    userId: user?.id || null,
     signOut,
+    getIdToken,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

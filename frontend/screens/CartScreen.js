@@ -1,6 +1,7 @@
 /**
  * Cart Screen
  * Displays selected items, quantity controls, price summary, and checkout.
+ * Uses Firebase Auth for userId.
  */
 import React, { useState } from 'react';
 import {
@@ -13,7 +14,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useCart } from '../context/CartContext';
-import { useAuth } from '@clerk/clerk-expo';
+import { useAppAuth } from '../context/AuthContext';
 import { createOrder } from '../services/api';
 import CartItem from '../components/CartItem';
 import Colors from '../constants/colors';
@@ -23,7 +24,7 @@ const TAX_RATE = 0.05;
 
 const CartScreen = ({ navigation }) => {
   const { items, cartTotal, itemCount, updateQuantity, removeFromCart, clearCart, restaurantId, restaurantName } = useCart();
-  const { userId } = useAuth();
+  const { userId } = useAppAuth();
   const [loading, setLoading] = useState(false);
 
   const taxAmount = cartTotal * TAX_RATE;
@@ -31,6 +32,11 @@ const CartScreen = ({ navigation }) => {
 
   const handleCheckout = async () => {
     if (items.length === 0) return;
+
+    if (!userId) {
+      Alert.alert('Sign In Required', 'Please sign in to place an order.');
+      return;
+    }
 
     setLoading(true);
     try {

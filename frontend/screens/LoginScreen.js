@@ -1,12 +1,6 @@
 /**
  * Login Screen
- * Clerk-powered authentication with email/password and Google OAuth.
- *
- * Google OAuth uses expo-web-browser for the redirect flow:
- * 1. Clerk creates an OAuth signIn attempt
- * 2. expo-web-browser opens Google's login page
- * 3. After user logs in, browser redirects back with a callback URL
- * 4. Clerk processes the callback and sets the active session
+ * Firebase-powered authentication with email/password and Google Sign In.
  */
 import React, { useState, useCallback } from 'react';
 import {
@@ -21,100 +15,58 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { useSignIn } from '@clerk/clerk-expo';
-import * as WebBrowser from 'expo-web-browser';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { googleSignIn } from '../services/googleAuth';
+import { auth } from '../config/firebase';
 import Colors from '../constants/colors';
 
-// CRITICAL: This tells expo-web-browser to automatically close the browser
-// when the OAuth redirect happens. Without this, the browser stays open.
-WebBrowser.maybeCompleteAuthSession();
+// Configure Google Sign In
+GoogleSignin.configure({
+  webClientId: '997717882026-8vk6fq0k7h3i7lnqv3hcq2b5r0qjg9vr.apps.googleusercontent.com', // Firebase Web Client ID
+  offlineAccess: true,
+});
 
 const LoginScreen = ({ navigation }) => {
-  const { signIn, setActive, isLoaded } = useSignIn();
-
   const [emailAddress, setEmailAddress] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  // Handle email/password login via Clerk
+  // Handle email/password login via Firebase
   const handleLogin = useCallback(async () => {
     if (!emailAddress.trim() || !password.trim()) {
       Alert.alert('Missing Fields', 'Please enter both email and password.');
       return;
     }
 
-    if (!isLoaded) return;
-
     setLoading(true);
     try {
-      const signInAttempt = await signIn.create({
-        identifier: emailAddress.trim(),
-        password,
-      });
-
-      // Set the active session — this updates isSignedIn in Clerk
-      await setActive({ session: signInAttempt.createdSessionId });
+      await signInWithEmailAndPassword(auth, emailAddress.trim(), password);
+      // AuthContext's onAuthStateChanged listener will auto-update the app
     } catch (err) {
-      const message = err.errors?.[0]?.message || err.message || 'Login failed';
+      let message = 'Login failed';
+      if (err.code === 'auth/user-not-found') message = 'No account found with this email.';
+      else if (err.code === 'auth/wrong-password') message = 'Incorrect password.';
+      else if (err.code === 'auth/invalid-email') message = 'Invalid email address.';
+      else if (err.code === 'auth/invalid-credential') message = 'Invalid email or password.';
+      else if (err.code === 'auth/too-many-requests') message = 'Too many attempts. Try again later.';
+      else message = err.message;
       Alert.alert('Login Failed', message);
     } finally {
       setLoading(false);
     }
-  }, [emailAddress, password, signIn, setActive, isLoaded]);
+  }, [emailAddress, password]);
 
-  // Handle Google OAuth sign-in using expo-web-browser
+  // Handle Google Sign In
   const handleGoogleSignIn = useCallback(async () => {
-    if (!isLoaded) return;
-
     try {
-      // Step 1: Create OAuth sign-in attempt with Clerk
-      const signInAttempt = await signIn.create({
-        strategy: 'oauth_google',
-      });
-
-      // Step 2: Get the OAuth URL from Clerk's response
-      const { firstFactorVerification } = signInAttempt;
-      const oauthUrl = firstFactorVerification?.externalVerificationExternalURL;
-
-      if (!oauthUrl) {
-        Alert.alert('Error', 'Could not get Google sign-in URL. Please try again.');
-        return;
-      }
-
-      // Step 3: Open the Google login page in a secure browser
-      const result = await WebBrowser.openAuthSessionAsync(
-        oauthUrl.toString(),
-        'bhojango://'
-      );
-
-      // Step 4: Process the callback result
-      if (result.type === 'success') {
-        // The callback URL contains the redirect query params
-        const { url } = result;
-
-        // Tell Clerk to attempt getting the session from the redirect
-        await signIn.attemptFirstFactor({
-          strategy: 'oauth_google',
-          redirectUrl: url,
-        });
-
-        // Step 5: Set the active session
-        if (signIn.createdSessionId) {
-          await setActive({ session: signIn.createdSessionId });
-        } else {
-          Alert.alert('Sign In Error', 'Could not complete Google sign-in. Please try again.');
-        }
-      } else if (result.type === 'cancel') {
-        // User cancelled the browser — do nothing
-      } else {
-        Alert.alert('Sign In Error', 'Google sign-in was not completed.');
-      }
+      await googleSignIn();
+      // AuthContext's onAuthStateChanged listener will auto-update
     } catch (err) {
-      const message = err.errors?.[0]?.message || err.message || 'Google sign-in failed';
-      Alert.alert('Sign In Error', message);
+      Alert.alert('Google Sign In Error', err.message || 'Something went wrong');
     }
-  }, [signIn, setActive, isLoaded]);
+  }, []);
 
   return (
     <KeyboardAvoidingView

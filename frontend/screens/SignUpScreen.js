@@ -1,11 +1,7 @@
 /**
  * Sign Up Screen
- * New user registration via Clerk.
- *
- * Flow:
- * 1. User fills form → Clerk creates account
- * 2. If email verification needed → show code input screen
- * 3. After verification → setActive session → auto-redirects to main app
+ * New user registration via Firebase Authentication.
+ * Flow: Create account → (optional) email verification → auto-redirect to home
  */
 import React, { useState, useCallback } from 'react';
 import {
@@ -20,22 +16,19 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { useSignUp } from '@clerk/clerk-expo';
+import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
+import { auth } from '../config/firebase';
 import Colors from '../constants/colors';
 
 const SignUpScreen = ({ navigation }) => {
-  const { signUp, setActive, isLoaded } = useSignUp();
-
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [emailAddress, setEmailAddress] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [pendingVerification, setPendingVerification] = useState(false);
-  const [code, setCode] = useState('');
 
-  // Handle sign up via Clerk
+  // Handle sign up via Firebase
   const handleSignUp = useCallback(async () => {
     if (!firstName.trim() || !emailAddress.trim() || !password) {
       Alert.alert('Missing Fields', 'Please fill in all required fields.');
@@ -47,145 +40,40 @@ const SignUpScreen = ({ navigation }) => {
       return;
     }
 
-    if (!isLoaded) return;
-
     setLoading(true);
     try {
-      const signUpAttempt = await signUp.create({
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        emailAddress: emailAddress.trim(),
-        password,
+      // Create user with Firebase
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        emailAddress.trim(),
+        password
+      );
+
+      // Update display name
+      await userCredential.user.updateProfile({
+        displayName: `${firstName.trim()} ${lastName.trim()}`.trim(),
       });
 
-      // Check if email verification is required
-      if (signUpAttempt.verifications?.emailAddress?.status !== 'verified') {
-        // Send verification email
-        await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
-        setPendingVerification(true);
-        Alert.alert(
-          'Verify Your Email',
-          'We sent a verification code to your email. Please enter it below.'
-        );
-      } else {
-        // Already verified — set session directly
-        if (signUpAttempt.createdSessionId) {
-          await setActive({ session: signUpAttempt.createdSessionId });
-        }
-      }
+      // Send email verification
+      await sendEmailVerification(userCredential.user);
+
+      Alert.alert(
+        'Account Created!',
+        'A verification email has been sent to your email. You can still browse the app while unverified.'
+      );
+
+      // AuthContext's onAuthStateChanged will auto-redirect to home
     } catch (err) {
-      const message = err.errors?.[0]?.message || err.message || 'Sign up failed';
+      let message = 'Sign up failed';
+      if (err.code === 'auth/email-already-in-use') message = 'This email is already registered. Try signing in.';
+      else if (err.code === 'auth/weak-password') message = 'Password is too weak. Use at least 8 characters.';
+      else if (err.code === 'auth/invalid-email') message = 'Invalid email address.';
+      else message = err.message;
       Alert.alert('Sign Up Failed', message);
     } finally {
       setLoading(false);
     }
-  }, [firstName, lastName, emailAddress, password, signUp, setActive, isLoaded]);
-
-  // Handle email verification
-  const handleVerification = useCallback(async () => {
-    if (!code.trim()) {
-      Alert.alert('Missing Code', 'Please enter the verification code.');
-      return;
-    }
-
-    if (!isLoaded) return;
-
-    setLoading(true);
-    try {
-      const signUpAttempt = await signUp.attemptEmailAddressVerification({
-        code: code.trim(),
-      });
-
-      // After successful verification, set the active session
-      // This will update isSignedIn → true → AppNavigator auto-redirects
-      if (signUpAttempt.status === 'complete') {
-        if (signUpAttempt.createdSessionId) {
-          await setActive({ session: signUpAttempt.createdSessionId });
-        }
-      } else {
-        Alert.alert('Verification Incomplete', 'Something went wrong. Please try again.');
-      }
-    } catch (err) {
-      const message = err.errors?.[0]?.message || 'Verification failed';
-      Alert.alert('Verification Failed', message);
-    } finally {
-      setLoading(false);
-    }
-  }, [code, signUp, setActive, isLoaded]);
-
-  // Resend verification code
-  const handleResendCode = useCallback(async () => {
-    if (!isLoaded) return;
-    try {
-      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
-      Alert.alert('Code Resent', 'A new verification code has been sent to your email.');
-    } catch (err) {
-      Alert.alert('Error', err.errors?.[0]?.message || 'Could not resend code.');
-    }
-  }, [signUp, isLoaded]);
-
-  // Verification screen
-  if (pendingVerification) {
-    return (
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          <View style={styles.header}>
-            <View style={styles.logoIcon}>
-              <Text style={styles.logoEmoji}>📧</Text>
-            </View>
-            <Text style={styles.title}>Verify Email</Text>
-            <Text style={styles.subtitle}>
-              Enter the code sent to {emailAddress}
-            </Text>
-          </View>
-
-          <View style={styles.form}>
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Verification Code</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter 6-digit code"
-                placeholderTextColor={Colors.textLight}
-                value={code}
-                onChangeText={setCode}
-                keyboardType="number-pad"
-                maxLength={6}
-              />
-            </View>
-
-            <TouchableOpacity
-              style={[styles.signUpButton, loading && styles.buttonDisabled]}
-              onPress={handleVerification}
-              disabled={loading}
-              activeOpacity={0.8}
-            >
-              {loading ? (
-                <ActivityIndicator color={Colors.textWhite} />
-              ) : (
-                <Text style={styles.signUpButtonText}>Verify & Continue</Text>
-              )}
-            </TouchableOpacity>
-
-            {/* Resend Code */}
-            <TouchableOpacity
-              style={styles.resendButton}
-              onPress={handleResendCode}
-              disabled={loading}
-            >
-              <Text style={styles.resendText}>Didn't get the code? Resend</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    );
-  }
+  }, [firstName, lastName, emailAddress, password]);
 
   return (
     <KeyboardAvoidingView
@@ -414,15 +302,6 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
     color: Colors.textWhite,
-  },
-  resendButton: {
-    marginTop: 16,
-    alignItems: 'center',
-  },
-  resendText: {
-    fontSize: 14,
-    color: Colors.primary,
-    fontWeight: '600',
   },
   footer: {
     flexDirection: 'row',
